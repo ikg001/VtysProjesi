@@ -1,0 +1,44 @@
+{
+  "name": "routine-guide",
+  "version": "1.0.0",
+  "description": "Personal Daily Routine Tracker - Production-grade backend API",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "prebuild": "rimraf dist",
+    "build": "npm run build --workspaces --if-present",
+    "start": "node apps/api/dist/main",
+    "start:dev": "npm run start:dev --workspace=apps/api",
+    "start:debug": "npm run start:debug --workspace=apps/api",
+    "start:prod": "npm run start:prod --workspace=apps/api",
+    "lint": "eslint \"{apps,packages}/**/*.ts\" --fix",
+    "format": "prettier --write \"**/*.{ts,json,md}\"",
+    "test": "npm run test --workspaces --if-present",
+    "test:watch": "npm run test:watch --workspace=apps/api",
+    "test:cov": "npm run test:cov --workspace=apps/api",
+    "test:e2e": "npm run test:e2e --workspace=apps/api",
+    "db:migrate": "npm run db:migrate --workspace=apps/api",
+    "db:seed": "npm run db:seed --workspace=apps/api",
+    "db:studio": "npm run db:studio --workspace=apps/api",
+    "db:generate": "npm run db:generate --workspace=apps/api",
+    "worker:scheduler": "npm run start:dev --workspace=apps/workers"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.0",
+    "@typescript-eslint/eslint-plugin": "^6.13.0",
+    "@typescript-eslint/parser": "^6.13.0",
+    "eslint": "^8.54.0",
+    "eslint-config-prettier": "^9.0.0",
+    "eslint-plugin-prettier": "^5.0.1",
+    "prettier": "^3.1.0",
+    "rimraf": "^5.0.5",
+    "typescript": "^5.3.2"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=9.0.0"
+  }
+}

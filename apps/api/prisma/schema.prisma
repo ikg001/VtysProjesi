@@ -1,0 +1,194 @@
+// Prisma schema for Routine Guide
+// Maps to existing Supabase/PostgreSQL tables
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== AUTH (Supabase managed) ====================
+// Note: auth.users table is managed by Supabase
+// We reference it via @id @default(dbgenerated())
+
+// ==================== CORE TABLES ====================
+
+/// Routine definitions with scheduling rules
+model Routine {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String   @map("user_id") @db.Uuid
+  title      String   @db.Text
+  frequency  String   @db.Text // 'daily' | 'weekly'
+  weekdays   Int[]    // 1=Mon, 2=Tue, ..., 7=Sun (for weekly routines)
+  timeOfDay  String?  @map("time_of_day") @db.Time
+  reminders  Boolean  @default(true)
+  meta       Json     @default("{}") @db.JsonB
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  checkins   Checkin[]
+  streaks    Streak?
+  reminderSchedules Reminder[]
+
+  @@index([userId], name: "idx_routines_user")
+  @@map("routines")
+}
+
+/// Check-in records (done/skipped) for routines
+model Checkin {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  routineId   String   @map("routine_id") @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  checkinDate DateTime @map("checkin_date") @db.Date
+  status      String   @db.Text // 'done' | 'skipped'
+  note        String?  @db.Text
+  meta        Json     @default("{}") @db.JsonB
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  routine Routine @relation(fields: [routineId], references: [id], onDelete: Cascade)
+
+  @@unique([routineId, checkinDate], name: "checkins_routine_date_unique")
+  @@index([userId], name: "idx_checkins_user")
+  @@index([routineId], name: "idx_checkins_routine")
+  @@index([checkinDate], name: "idx_checkins_date")
+  @@map("checkins")
+}
+
+/// Streak tracking per routine
+model Streak {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  routineId     String   @unique @map("routine_id") @db.Uuid
+  userId        String   @map("user_id") @db.Uuid
+  currentStreak Int      @default(0) @map("current_streak")
+  bestStreak    Int      @default(0) @map("best_streak")
+  lastCheckinAt DateTime? @map("last_checkin_at") @db.Timestamptz
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  routine Routine @relation(fields: [routineId], references: [id], onDelete: Cascade)
+
+  @@index([userId], name: "idx_streaks_user")
+  @@map("streaks")
+}
+
+// ==================== USER PREFERENCES ====================
+
+model UserPrefs {
+  userId    String   @id @map("user_id") @db.Uuid
+  tz        String   @default("Europe/Istanbul") @db.Text
+  locale    String   @default("tr-TR") @db.Text
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  @@map("user_prefs")
+}
+
+// ==================== REMINDERS ====================
+
+model Reminder {
+  id           String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId       String    @map("user_id") @db.Uuid
+  routineId    String    @map("routine_id") @db.Uuid
+  scheduledFor DateTime  @map("scheduled_for") @db.Timestamptz
+  status       String    @default("pending") @db.Text // 'pending' | 'sent' | 'ack' | 'snoozed' | 'missed'
+  sentAt       DateTime? @map("sent_at") @db.Timestamptz
+  ackAt        DateTime? @map("ack_at") @db.Timestamptz
+  snoozeUntil  DateTime? @map("snooze_until") @db.Timestamptz
+  meta         Json      @default("{}") @db.JsonB
+  createdAt    DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt    DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  routine Routine @relation(fields: [routineId], references: [id], onDelete: Cascade)
+
+  @@index([userId], name: "idx_reminders_user")
+  @@index([scheduledFor], name: "idx_reminders_sched")
+  @@index([status], name: "idx_reminders_status")
+  @@map("reminders")
+}
+
+// ==================== PUSH NOTIFICATIONS ====================
+
+model PushToken {
+  userId    String   @map("user_id") @db.Uuid
+  token     String   @db.Text
+  platform  String   @db.Text // 'android' | 'ios' | 'web'
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@id([userId, token])
+  @@map("push_tokens")
+}
+
+// ==================== EVENTS (Telemetry) ====================
+
+model Event {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  type      String   @db.Text // 'checkin_done', 'checkin_planned', etc.
+  payload   Json     @default("{}") @db.JsonB
+  timestamp DateTime @default(now()) @map("timestamp") @db.Timestamptz
+
+  @@index([userId, timestamp(sort: Desc)], name: "idx_events_user_ts")
+  @@map("events")
+}
+
+// ==================== API INTEGRATION ====================
+
+model ApiSource {
+  id            String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ownerId       String    @map("owner_id") @db.Uuid
+  name          String    @db.Text
+  baseUrl       String    @map("base_url") @db.Text
+  method        String    @default("GET") @db.Text // 'GET' | 'POST'
+  authKind      String    @default("none") @map("auth_kind") @db.Text // 'none' | 'apikey' | 'oauth2'
+  headers       Json      @default("{}") @db.JsonB
+  query         Json      @default("{}") @db.JsonB
+  bodyTemplate  Json      @default("{}") @map("body_template") @db.JsonB
+  isActive      Boolean   @default(true) @map("is_active")
+  scheduleCron  String?   @map("schedule_cron") @db.Text
+  lastPulledAt  DateTime? @map("last_pulled_at") @db.Timestamptz
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz
+  updatedAt     DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz
+
+  // Relations
+  ingests ApiIngest[]
+
+  @@index([ownerId], name: "idx_api_sources_owner")
+  @@index([isActive], name: "idx_api_sources_active")
+  @@map("api_sources")
+}
+
+model ApiIngest {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  sourceId   String   @map("source_id") @db.Uuid
+  ownerId    String   @map("owner_id") @db.Uuid
+  pulledAt   DateTime @default(now()) @map("pulled_at") @db.Timestamptz
+  payload    Json     @db.JsonB
+  dedupeKey  String?  @map("dedupe_key") @db.Text
+  httpStatus Int?     @map("http_status")
+  status     String   @default("ok") @db.Text // 'ok' | 'error'
+  error      String?  @db.Text
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  // Relations
+  source ApiSource @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+
+  @@unique([sourceId, dedupeKey], name: "api_ingest_dedupe")
+  @@index([sourceId], name: "api_ingest_source_idx")
+  @@map("api_ingest")
+}
+
+// ==================== ROADMAP / FUTURE ====================
+// Potential additions:
+// - Tasks table (todo items)
+// - Journals table (daily reflections)
+// - Attachments table (media for journal/routines)
+// - ShareLinks table (public sharing)
+// - Monthly partitioning for events/checkins for better performance
